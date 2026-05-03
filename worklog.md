@@ -27,3 +27,22 @@ Stage Summary:
 - Database seeded with 9 realistic Peruvian properties
 - Zero lint errors
 - Server compiles and serves correctly
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Push to GitHub and Deploy to Vercel
+
+Work Log:
+- Removed sensitive files (.env, db/custom.db) from git tracking
+- Updated .gitignore to exclude *.db files
+- Created GitHub repository: https://github.com/FeveVz/fincra-peru
+- Pushed all code to main branch
+- Installed Vercel CLI and linked project
+- Deployed to Vercel production successfully
+
+Stage Summary:
+- GitHub: https://github.com/FeveVz/fincra-peru (public)
+- Vercel: https://my-project-iota-brown.vercel.app (HTTP 200 confirmed)
+- .vercel directory added for project linkage
+- NOTE: SQLite is used locally; for production Supabase integration is recommended
