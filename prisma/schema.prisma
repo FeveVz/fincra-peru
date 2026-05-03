@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Property {
+  id                 String   @id @default(cuid())
+  title              String
+  slug               String   @unique
+  description        String   // Honest technical description
+  operationType      String   @default("venta") // venta, alquiler
+  propertyType       String   // terreno, casa, departamento, local_comercial, oficina
+  
+  // Location
+  department         String   // Ica, Lima, Arequipa, etc.
+  province           String
+  district           String
+  address            String?
+  latitude           Float?
+  longitude          Float?
+  zone               String?  // Zone name for market comparison
+  
+  // Dimensions & Price
+  areaTotal          Float    // Total area in m²
+  areaBuilt          Float?   // Built area in m²
+  areaFront          Float?   // Frontage in meters
+  price              Float    // Price in PEN (Soles)
+  precioM2           Float    // Price per m² (auto-calculated)
+  
+  // Legal & Trust
+  trustScore         Int      @default(50) // 1-100 trust algorithm score
+  statusLegal        String   @default("En Trámite") // Saneado, En Trámite, Posesión
+  cargasLegales      String?  // Legal charges description
+  impuestoPredial    Float?   // Annual property tax estimate
+  certificadoBusqueda String? // Search certificate status
+  fechaTasacion      DateTime? // Appraisal date
+  
+  // Market Comparison
+  comparisonMarket   Float?   // Percentage difference vs zone average
+  
+  // Urban Services (JSON stored as text in SQLite)
+  urbanServices      String   @default("{}") // JSON: {agua, luz, desague, internet}
+  
+  // Technical Details
+  dormitorios        Int?
+  banos              Int?
+  estacionamiento    Int?
+  pisos              Int?
+  anoConstruccion    Int?
+  materialConstruccion String? // concreto, ladrillo, adobe, mixto
+  
+  // Media
+  imageUrl           String?
+  imageGallery       String   @default("[]") // JSON array of image URLs
+  kuulaUrl           String?  // 360 tour ID
+  droneVideoUrl      String?  // Drone video URL
+  
+  // Features
+  features           String   @default("[]") // JSON array of feature strings
+  
+  // Metadata
+  featured           Boolean  @default(false)
+  active             Boolean  @default(true)
+  views              Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Comparison {
+  id          String   @id @default(cuid())
+  propertyIds String   // JSON array of property IDs (max 3)
+  userId      String?
+  createdAt   DateTime @default(now())
+}
