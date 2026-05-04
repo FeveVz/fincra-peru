@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { usePropertyStore, Property } from '@/stores/property-store'
 import { HonestPropertyCard } from '@/components/property/honest-property-card'
 import { PropertyDetail } from '@/components/property/property-detail'
@@ -24,11 +24,24 @@ import {
   Table2,
   LayoutDashboard,
   ArrowLeft,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
 type AppView = 'public' | 'admin'
@@ -56,6 +69,127 @@ export default function HomePage() {
   const [editingProperty, setEditingProperty] = useState<Property | null>(null)
   const [showForm, setShowForm] = useState(false)
 
+  // --- Admin Auth State ---
+  const [showAuthDialog, setShowAuthDialog] = useState(false)
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  // --- Secret trigger: triple-click on logo ---
+  const logoClickCount = useRef(0)
+  const logoClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleLogoClick = useCallback(() => {
+    logoClickCount.current += 1
+
+    if (logoClickTimer.current) clearTimeout(logoClickTimer.current)
+
+    if (logoClickCount.current >= 5) {
+      logoClickCount.current = 0
+      // Check if already authenticated
+      if (sessionStorage.getItem('fincra_admin_auth') === 'true') {
+        setAppView('admin')
+      } else {
+        setShowAuthDialog(true)
+      }
+    } else {
+      logoClickTimer.current = setTimeout(() => {
+        logoClickCount.current = 0
+      }, 800)
+    }
+  }, [])
+
+  // --- Secret trigger: keyboard shortcut Ctrl+Shift+A ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault()
+        if (sessionStorage.getItem('fincra_admin_auth') === 'true') {
+          setAppView('admin')
+        } else {
+          setShowAuthDialog(true)
+        }
+      }
+      // Also: Ctrl+Shift+X to exit admin
+      if (e.ctrlKey && e.shiftKey && e.key === 'X' && appView === 'admin') {
+        e.preventDefault()
+        setAppView('public')
+        setEditingProperty(null)
+        setShowForm(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [appView])
+
+  // --- Restore auth from sessionStorage ---
+  useEffect(() => {
+    const auth = sessionStorage.getItem('fincra_admin_auth')
+    if (auth === 'true') {
+      setIsAuthenticated(true)
+    }
+  }, [])
+
+  const handleAdminLogin = async () => {
+    if (!authPassword.trim()) {
+      setAuthError('Ingresa la contraseña')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError('')
+
+    try {
+      const res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: authPassword }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setIsAuthenticated(true)
+        sessionStorage.setItem('fincra_admin_auth', 'true')
+        setShowAuthDialog(false)
+        setAuthPassword('')
+        setAppView('admin')
+        toast.success('Panel de administración desbloqueado')
+      } else {
+        setAuthError(data.error || 'Contraseña incorrecta')
+        if (data.remaining !== undefined && data.remaining <= 2 && data.remaining > 0) {
+          setAuthError(`${data.error}. ${data.remaining} intentos restantes.`)
+        }
+        if (data.locked) {
+          setAuthError(data.error)
+        }
+      }
+    } catch {
+      setAuthError('Error de conexión')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    sessionStorage.removeItem('fincra_admin_auth')
+    setAppView('public')
+    setEditingProperty(null)
+    setShowForm(false)
+    toast.success('Sesión cerrada')
+  }
+
+  const handleAuthKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleAdminLogin()
+    }
+  }
+
+  // --- Admin Properties Hook ---
   const {
     properties: adminProperties,
     loading: adminLoading,
@@ -83,11 +217,13 @@ export default function HomePage() {
     await fetchAdminProperties()
   }, [fetchProperties, fetchAdminProperties])
 
-  // Fetch on mount
-  useState(() => {
-    fetchProperties()
-    fetchAdminProperties()
-  })
+  // Fetch on mount (client-side only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      fetchProperties()
+      fetchAdminProperties()
+    }
+  }, [])
 
   const handleCreateProperty = async (data: Record<string, unknown>) => {
     try {
@@ -158,7 +294,6 @@ export default function HomePage() {
   }
 
   const handleViewPublic = (property: Property) => {
-    // Find matching property in the store
     const match = filteredProperties.find((p) => p.id === property.id)
     if (match) {
       setSelectedProperty(match)
@@ -187,8 +322,8 @@ export default function HomePage() {
     )
   }
 
-  // Admin View
-  if (appView === 'admin') {
+  // Admin View (hidden, password-protected)
+  if (appView === 'admin' && isAuthenticated) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50">
         {/* Admin Header */}
@@ -215,18 +350,29 @@ export default function HomePage() {
               </div>
             </div>
 
-            <Button
-              size="sm"
-              className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => {
-                setEditingProperty(null)
-                setShowForm(true)
-                setAdminTab('form')
-              }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Nueva Propiedad
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => {
+                  setEditingProperty(null)
+                  setShowForm(true)
+                  setAdminTab('form')
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Nueva Propiedad
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-red-400 h-8 text-xs"
+                onClick={handleLogout}
+              >
+                <Lock className="w-3.5 h-3.5 mr-1" />
+                Cerrar sesión
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -284,10 +430,91 @@ export default function HomePage() {
   // Public View
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      {/* Auth Dialog (hidden password prompt) */}
+      <Dialog open={showAuthDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowAuthDialog(false)
+          setAuthPassword('')
+          setAuthError('')
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gray-900 flex items-center justify-center">
+                <Lock className="w-4 h-4 text-white" />
+              </div>
+              Acceso Restringido
+            </DialogTitle>
+            <DialogDescription>
+              Ingresa la contraseña de administrador para continuar.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            {authError && (
+              <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+                authError.includes('Demasiados')
+                  ? 'bg-red-50 border border-red-200 text-red-700'
+                  : 'bg-amber-50 border border-amber-200 text-amber-700'
+              }`}>
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="admin-password">Contraseña</Label>
+              <div className="relative mt-1">
+                <Input
+                  id="admin-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={authPassword}
+                  onChange={(e) => {
+                    setAuthPassword(e.target.value)
+                    setAuthError('')
+                  }}
+                  onKeyDown={handleAuthKeyDown}
+                  placeholder="••••••••"
+                  className="pr-10"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleAdminLogin}
+              disabled={authLoading || !authPassword.trim()}
+              className="w-full bg-gray-900 hover:bg-gray-800"
+            >
+              {authLoading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 mr-2" />
+                  Acceder al Panel
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div
+            className="flex items-center gap-2 cursor-default select-none"
+            onClick={handleLogoClick}
+            role="banner"
+          >
             <div className="w-8 h-8 rounded-lg bg-gray-900 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-white" />
             </div>
@@ -317,15 +544,6 @@ export default function HomePage() {
             >
               <Calculator className="w-3.5 h-3.5" />
               Calculadora
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs gap-1.5 text-gray-500 hover:text-gray-900"
-              onClick={() => setAppView('admin')}
-            >
-              <Settings className="w-3.5 h-3.5" />
-              Admin
             </Button>
           </div>
         </div>
@@ -487,9 +705,9 @@ export default function HomePage() {
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-3">Contacto</h4>
               <div className="space-y-2">
-                <p className="text-xs text-gray-500">📧 contacto@fincra.pe</p>
-                <p className="text-xs text-gray-500">📱 +51 999 999 999</p>
-                <p className="text-xs text-gray-500">📍 Ica, Perú</p>
+                <p className="text-xs text-gray-500">contacto@fincra.pe</p>
+                <p className="text-xs text-gray-500">+51 999 999 999</p>
+                <p className="text-xs text-gray-500">Ica, Perú</p>
               </div>
             </div>
           </div>

@@ -46,3 +46,29 @@ Stage Summary:
 - Vercel: https://my-project-iota-brown.vercel.app (HTTP 200 confirmed)
 - .vercel directory added for project linkage
 - NOTE: SQLite is used locally; for production Supabase integration is recommended
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Hide admin panel and add password protection
+
+Work Log:
+- Created `/api/admin/auth` API route with rate limiting (5 attempts, 15-min lockout) and password verification
+- Added `ADMIN_PASSWORD=fincra2025` to .env file
+- Removed visible "Admin" button from public header in page.tsx
+- Added secret trigger mechanisms: (1) 5 clicks on the Fincra logo within 800ms, (2) Ctrl+Shift+A keyboard shortcut
+- Added password dialog (shadcn Dialog) that appears when secret trigger is activated
+- Auth state stored in sessionStorage (auto-clears when tab closes)
+- Added logout button in admin header and Ctrl+Shift+X to exit admin
+- Fixed React anti-pattern: changed useState() side effect to useEffect() for property fetching
+- Added client-side-only guard for fetch calls to avoid SSR URL parsing errors
+- Added show/hide password toggle in auth dialog
+- All verification passed: page loads 200, properties API 200, auth API returns success with correct password
+
+Stage Summary:
+- Admin panel is now completely hidden from public view - no visible buttons or links
+- Secret access via: 5x logo click OR Ctrl+Shift+A
+- Password-protected with server-side verification and rate limiting
+- Session persists per browser tab (sessionStorage), cleared on tab close
+- Admin password: `fincra2025` (configurable via ADMIN_PASSWORD env var)
+- Auth API: POST /api/admin/auth with { password: "..." } payload
