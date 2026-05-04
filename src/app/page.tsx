@@ -1,26 +1,37 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { usePropertyStore, Property } from '@/stores/property-store'
 import { HonestPropertyCard } from '@/components/property/honest-property-card'
 import { PropertyDetail } from '@/components/property/property-detail'
 import { PropertyComparator } from '@/components/property/property-comparator'
 import { ClosingCalculator } from '@/components/property/closing-calculator'
 import { SmartFilters } from '@/components/property/smart-filters'
+import { useAdminProperties } from '@/components/admin/use-admin-properties'
+import { PropertyForm } from '@/components/admin/property-form'
+import { PropertiesTable } from '@/components/admin/properties-table'
+import { AdminDashboard } from '@/components/admin/admin-dashboard'
 import {
   MessageCircle,
   Shield,
-  Eye,
   GitCompareArrows,
   Calculator,
-  ChevronDown,
   Building2,
   TrendingUp,
   FileSearch,
+  Settings,
+  Plus,
+  Table2,
+  LayoutDashboard,
+  ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toast } from 'sonner'
+
+type AppView = 'public' | 'admin'
 
 export default function HomePage() {
   const {
@@ -40,6 +51,21 @@ export default function HomePage() {
     clearCompare,
   } = usePropertyStore()
 
+  const [appView, setAppView] = useState<AppView>('public')
+  const [adminTab, setAdminTab] = useState('dashboard')
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null)
+  const [showForm, setShowForm] = useState(false)
+
+  const {
+    properties: adminProperties,
+    loading: adminLoading,
+    stats,
+    fetchProperties: fetchAdminProperties,
+    deleteProperty,
+    toggleActive,
+    toggleFeatured,
+  } = useAdminProperties()
+
   const fetchProperties = useCallback(async () => {
     try {
       const res = await fetch('/api/properties')
@@ -52,13 +78,77 @@ export default function HomePage() {
     }
   }, [setProperties])
 
-  useEffect(() => {
+  const refreshAll = useCallback(async () => {
+    await fetchProperties()
+    await fetchAdminProperties()
+  }, [fetchProperties, fetchAdminProperties])
+
+  // Fetch on mount
+  useState(() => {
     fetchProperties()
-  }, [fetchProperties])
+    fetchAdminProperties()
+  })
+
+  const handleCreateProperty = async (data: Record<string, unknown>) => {
+    try {
+      const res = await fetch('/api/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (res.ok) {
+        toast.success('Propiedad creada exitosamente')
+        setShowForm(false)
+        await refreshAll()
+        return true
+      }
+      const err = await res.json()
+      toast.error(err.error || 'Error al crear')
+      return false
+    } catch {
+      toast.error('Error de conexión')
+      return false
+    }
+  }
+
+  const handleUpdateProperty = async (data: Record<string, unknown>) => {
+    if (!editingProperty) return false
+    try {
+      const res = await fetch(`/api/properties/${editingProperty.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (res.ok) {
+        toast.success('Propiedad actualizada')
+        setEditingProperty(null)
+        setShowForm(false)
+        await refreshAll()
+        return true
+      }
+      const err = await res.json()
+      toast.error(err.error || 'Error al actualizar')
+      return false
+    } catch {
+      toast.error('Error de conexión')
+      return false
+    }
+  }
+
+  const handleDeleteProperty = async (property: Property) => {
+    const success = await deleteProperty(property.id)
+    if (success) {
+      toast.success('Propiedad eliminada')
+      await refreshAll()
+    } else {
+      toast.error('Error al eliminar')
+    }
+    return success
+  }
 
   const handleCompare = (property: Property) => {
     toggleCompare(property)
-    if (compareList.length === 0 || (compareList.length < 3 && !compareList.find(p => p.id === property.id))) {
+    if (compareList.length === 0 || (compareList.length < 3 && !compareList.find((p) => p.id === property.id))) {
       setActiveView('compare')
     }
   }
@@ -67,7 +157,24 @@ export default function HomePage() {
     setSelectedProperty(property)
   }
 
-  // Detail View
+  const handleViewPublic = (property: Property) => {
+    // Find matching property in the store
+    const match = filteredProperties.find((p) => p.id === property.id)
+    if (match) {
+      setSelectedProperty(match)
+    } else {
+      setSelectedProperty(property as Property)
+    }
+    setAppView('public')
+  }
+
+  const openEditForm = (property: Property) => {
+    setEditingProperty(property)
+    setShowForm(true)
+    setAdminTab('form')
+  }
+
+  // Detail View (overlay)
   if (activeView === 'detail' && selectedProperty) {
     return (
       <PropertyDetail
@@ -80,6 +187,101 @@ export default function HomePage() {
     )
   }
 
+  // Admin View
+  if (appView === 'admin') {
+    return (
+      <div className="min-h-screen flex flex-col bg-gray-50">
+        {/* Admin Header */}
+        <header className="sticky top-0 z-50 bg-gray-900 text-white">
+          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-white h-8 gap-1.5"
+                onClick={() => {
+                  setAppView('public')
+                  setEditingProperty(null)
+                  setShowForm(false)
+                }}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="text-xs">Volver al sitio</span>
+              </Button>
+              <Separator orientation="vertical" className="h-6 bg-gray-700" />
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-semibold">Panel de Administración</span>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => {
+                setEditingProperty(null)
+                setShowForm(true)
+                setAdminTab('form')
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Nueva Propiedad
+            </Button>
+          </div>
+        </header>
+
+        <main className="flex-1">
+          <div className="max-w-7xl mx-auto px-4 py-6">
+            {showForm ? (
+              /* Form View */
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <PropertyForm
+                  property={editingProperty}
+                  onSubmit={editingProperty ? handleUpdateProperty : handleCreateProperty}
+                  onCancel={() => {
+                    setShowForm(false)
+                    setEditingProperty(null)
+                    setAdminTab('dashboard')
+                  }}
+                />
+              </div>
+            ) : (
+              /* Tabs View */
+              <Tabs value={adminTab} onValueChange={setAdminTab}>
+                <TabsList className="mb-6">
+                  <TabsTrigger value="dashboard" className="text-xs gap-1.5">
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                    Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value="properties" className="text-xs gap-1.5">
+                    <Table2 className="w-3.5 h-3.5" />
+                    Propiedades
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="dashboard">
+                  <AdminDashboard stats={stats} loading={adminLoading} />
+                </TabsContent>
+
+                <TabsContent value="properties">
+                  <PropertiesTable
+                    properties={adminProperties as unknown as Property[]}
+                    onEdit={openEditForm}
+                    onDelete={handleDeleteProperty}
+                    onToggleActive={(p) => { toggleActive(p as never); toast.success('Estado actualizado') }}
+                    onToggleFeatured={(p) => { toggleFeatured(p as never); toast.success('Destacado actualizado') }}
+                    onViewPublic={handleViewPublic}
+                  />
+                </TabsContent>
+              </Tabs>
+            )}
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Public View
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
@@ -116,6 +318,15 @@ export default function HomePage() {
               <Calculator className="w-3.5 h-3.5" />
               Calculadora
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs gap-1.5 text-gray-500 hover:text-gray-900"
+              onClick={() => setAppView('admin')}
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Admin
+            </Button>
           </div>
         </div>
       </header>
@@ -146,7 +357,7 @@ export default function HomePage() {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-emerald-600">
-                  {filteredProperties.filter(p => p.statusLegal === 'Saneado').length}
+                  {filteredProperties.filter((p) => p.statusLegal === 'Saneado').length}
                 </p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider">Saneadas</p>
               </div>
@@ -189,7 +400,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Calculator Section (if active) */}
+        {/* Calculator Section */}
         {activeView === 'calculator' && (
           <section className="bg-white border-b border-gray-200">
             <div className="max-w-7xl mx-auto px-4 py-6">
@@ -200,7 +411,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Comparator Section (if active) */}
+        {/* Comparator Section */}
         {compareList.length > 0 && activeView === 'compare' && (
           <section className="bg-white border-b border-gray-200">
             <div className="max-w-7xl mx-auto px-4 py-6">
@@ -215,7 +426,6 @@ export default function HomePage() {
 
         {/* Properties Section */}
         <section className="max-w-7xl mx-auto px-4 py-6">
-          {/* Filters */}
           <SmartFilters
             filters={filters}
             onFilterChange={setFilter}
@@ -223,7 +433,6 @@ export default function HomePage() {
             totalResults={filteredProperties.length}
           />
 
-          {/* Results */}
           {filteredProperties.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-6">
               {filteredProperties.map((property) => (
@@ -291,7 +500,7 @@ export default function HomePage() {
         </div>
       </footer>
 
-      {/* Floating WhatsApp Button */}
+      {/* Floating WhatsApp */}
       <a
         href="https://wa.me/51999999999?text=Hola%2C%20necesito%20asesor%C3%ADa%20inmobiliaria%20técnica"
         target="_blank"
